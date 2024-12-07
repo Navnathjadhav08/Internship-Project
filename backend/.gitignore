@@ -22,7 +22,7 @@ Thumbs.db
 # Build output
 /dist/
 /build/
-/public/
+
 
 # Temporary files
 *.swp
