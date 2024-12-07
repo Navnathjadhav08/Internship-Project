@@ -125,8 +125,9 @@ router.post('/register', async (req, res) => {
     if (!user)
         return res.status(400).send('The user cannot be created!');
 
-    res.send(user);
+    res.status(201).send({ message: 'Registration successful', user });
 });
+
 
 router.delete('/:id', (req, res) => {
     User.findByIdAndRemove(req.params.id).then(user => {
