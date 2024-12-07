@@ -30,31 +30,22 @@ const storage = multer.diskStorage({
   })
   
 const uploadOptions = multer({ storage: storage })
+
 router.get('/', async (req, res) => {
     try {
         let filter = {};
         if (req.query.categories) {
-            // Use $in to match any of the categories in the array
-            filter = { category: { $in: req.query.categories.split(',') } };
+            filter = { category: req.query.categories.split(',') };
         }
-
-        // Fetch products and populate category field
         const productList = await Product.find(filter).populate('category');
-
-        // Check if the product list is empty
         if (!productList || productList.length === 0) {
             return res.status(404).json({ success: false, message: 'No products found' });
         }
-
-        // Return the product list
         res.status(200).send(productList);
     } catch (err) {
-        // Log error for debugging and return a 500 status
-        console.error('Error fetching products:', err.message);
         res.status(500).json({ success: false, error: err.message });
     }
 });
-
 
 
 router.get(`/:id`, async (req, res) =>{
