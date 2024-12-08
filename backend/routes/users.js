@@ -2,62 +2,34 @@ const { User } = require('../models/user');
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-// Removed jwt import since it's no longer needed
 
 router.get(`/`, async (req, res) => {
-    const userList = await User.find().select('-passwordHash');
-
-    if (!userList) {
-        res.status(500).json({ success: false });
+    try {
+        const userList = await User.find().select('-passwordHash');
+        res.status(200).send(userList);
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error retrieving users', error });
     }
-    res.send(userList);
 });
 
 router.get('/:id', async (req, res) => {
-    const user = await User.findById(req.params.id).select('-passwordHash');
-
-    if (!user) {
-        res.status(500).json({ message: 'The user with the given ID was not found.' });
+    try {
+        const user = await User.findById(req.params.id).select('-passwordHash');
+        if (!user) {
+            return res.status(404).json({ message: 'The user with the given ID was not found.' });
+        }
+        res.status(200).send(user);
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error retrieving user', error });
     }
-    res.status(200).send(user);
 });
 
 router.post('/', async (req, res) => {
-    let user = new User({
-        name: req.body.name,
-        email: req.body.email,
-        passwordHash: bcrypt.hashSync(req.body.password, 10),
-        phone: req.body.phone,
-        isAdmin: req.body.isAdmin,
-        street: req.body.street,
-        apartment: req.body.apartment,
-        zip: req.body.zip,
-        city: req.body.city,
-        country: req.body.country,
-    });
-    user = await user.save();
-
-    if (!user)
-        return res.status(400).send('The user cannot be created!');
-
-    res.send(user);
-});
-
-router.put('/:id', async (req, res) => {
-    const userExist = await User.findById(req.params.id);
-    let newPassword;
-    if (req.body.password) {
-        newPassword = bcrypt.hashSync(req.body.password, 10);
-    } else {
-        newPassword = userExist.passwordHash;
-    }
-
-    const user = await User.findByIdAndUpdate(
-        req.params.id,
-        {
+    try {
+        const user = new User({
             name: req.body.name,
             email: req.body.email,
-            passwordHash: newPassword,
+            passwordHash: bcrypt.hashSync(req.body.password, 10),
             phone: req.body.phone,
             isAdmin: req.body.isAdmin,
             street: req.body.street,
@@ -65,32 +37,124 @@ router.put('/:id', async (req, res) => {
             zip: req.body.zip,
             city: req.body.city,
             country: req.body.country,
-        },
-        { new: true }
-    );
+        });
+        const savedUser = await user.save();
+        res.status(201).send(savedUser);
+    } catch (error) {
+        res.status(400).send({ success: false, message: 'The user cannot be created!', error });
+    }
+});
+//  update route
+router.put('/:id', async (req, res) => {
+    try {
+        const userExist = await User.findById(req.params.id);
+        if (!userExist) {
+            return res.status(404).json({ message: 'User not found!' });
+        }
 
-    if (!user)
-        return res.status(400).send('The user cannot be updated!');
+        // Check if a new password is provided
+        const newPassword = req.body.password
+            ? bcrypt.hashSync(req.body.password, 10)  // Hash the new password
+            : userExist.passwordHash;  // Keep the old password if none provided
 
-    res.send(user);
+        // Update the user with new data
+        const user = await User.findByIdAndUpdate(
+            req.params.id,
+            {
+                name: req.body.name,
+                email: req.body.email,
+                passwordHash: newPassword, // Use the hashed password
+                phone: req.body.phone,
+                isAdmin: req.body.isAdmin,
+                street: req.body.street,
+                apartment: req.body.apartment,
+                zip: req.body.zip,
+                city: req.body.city,
+                country: req.body.country,
+            },
+            { new: true }
+        );
+
+        if (!user) {
+            return res.status(400).json({ message: 'The user cannot be updated!' });
+        }
+
+        res.status(200).json(user); // Send the updated user data back
+    } catch (error) {
+        res.status(500).json({ message: 'Error updating user', error });
+    }
 });
 
-// Removed the /login route since JWT authentication is not being used anymore
-router.post('/login', async (req, res) => {
-    // Find the user by email
-    const user = await User.findOne({ email: req.body.email });
 
-    if (!user) {
-        return res.status(400).send('The user not found');
+// Email check route
+router.get('/email-check', async (req, res) => {
+    try {
+        const { email, type } = req.query;
+
+        const existingUser = await User.findOne({ email });
+        if (!existingUser) {
+            if (type === 'register') {
+                return res.status(404).json({ message: 'Email not found! Please register first.' });
+            }
+            return res.status(404).json({ message: 'Email not found! Please check your email address.' });
+        }
+
+        // If type is "register", return user not found message
+        if (type === 'register') {
+            return res.status(400).json({ message: 'This email is already registered!' });
+        }
+
+        // For forgot password, return user data including ID
+        res.status(200).json(existingUser); // Send the user data, including the ID
+    } catch (error) {
+        res.status(500).json({ message: 'Error checking email', error });
     }
+});
 
-    // Compare the provided password with the stored hashed password
-    if (bcrypt.compareSync(req.body.password, user.passwordHash)) {
-        // Prepare the response object
+// ... other routes (unchanged)
+
+// Forgot Password Route (POST /forgot-password)
+router.post('/forgot-password', async (req, res) => {
+    try {
+      const { email, newPassword } = req.body;
+  
+      const user = await User.findOne({ email });
+      if (!user) {
+        return res.status(404).json({ message: 'Email not found!' });
+      }
+  
+      // Hash the new password
+      const hashedPassword = bcrypt.hashSync(newPassword, 10);
+  
+      // Update user with new password
+      user.passwordHash = hashedPassword;
+      await user.save();
+  
+      res.status(200).json({ message: 'Password reset successfully!' });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Error resetting password' });
+    }
+  });
+
+
+// Login route
+router.post('/login', async (req, res) => {
+    try {
+        const user = await User.findOne({ email: req.body.email });
+        if (!user) {
+            return res.status(404).json({ message: 'The user not found' });
+        }
+
+        const passwordMatch = bcrypt.compareSync(req.body.password, user.passwordHash);
+        if (!passwordMatch) {
+            return res.status(400).json({ message: 'Password is incorrect!' });
+        }
+
         const response = {
             message: user.isAdmin ? 'Admin login successful' : 'User login successful',
             user: {
-                id: user._id,  // Include the user ID in the response
+                id: user._id,
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
@@ -98,57 +162,60 @@ router.post('/login', async (req, res) => {
             },
         };
 
-        // Send the response
-        res.status(200).send(response);
-    } else {
-        // If the password is incorrect, return an error message
-        res.status(400).send('Password is incorrect!');
+        res.status(200).json(response);
+    } catch (error) {
+        res.status(500).json({ message: 'Error during login', error });
     }
 });
 
-
 router.post('/register', async (req, res) => {
-    let user = new User({
-        name: req.body.name,
-        email: req.body.email,
-        passwordHash: bcrypt.hashSync(req.body.password, 10),
-        phone: req.body.phone,
-        isAdmin: req.body.isAdmin,
-        street: req.body.street,
-        apartment: req.body.apartment,
-        zip: req.body.zip,
-        city: req.body.city,
-        country: req.body.country,
-    });
-    user = await user.save();
+    try {
+        // Check for duplicate email
+        const existingUser = await User.findOne({ email: req.body.email });
+        if (existingUser) {
+            return res.status(400).json({ message: 'A user with this email already exists!' });
+        }
 
-    if (!user)
-        return res.status(400).send('The user cannot be created!');
+        const user = new User({
+            name: req.body.name,
+            email: req.body.email,
+            passwordHash: bcrypt.hashSync(req.body.password, 10),
+            phone: req.body.phone,
+            isAdmin: req.body.isAdmin,
+            street: req.body.street,
+            apartment: req.body.apartment,
+            zip: req.body.zip,
+            city: req.body.city,
+            country: req.body.country,
+        });
 
-    res.status(201).send({ message: 'Registration successful', user });
+        const savedUser = await user.save();
+        res.status(201).json({ message: 'Registration successful', user: savedUser });
+    } catch (error) {
+        res.status(400).json({ message: 'The user cannot be created!', error });
+    }
 });
 
-
-router.delete('/:id', (req, res) => {
-    User.findByIdAndRemove(req.params.id).then(user => {
-        if (user) {
-            return res.status(200).json({ success: true, message: 'The user is deleted!' });
-        } else {
-            return res.status(404).json({ success: false, message: "User not found!" });
+router.delete('/:id', async (req, res) => {
+    try {
+        const user = await User.findByIdAndRemove(req.params.id);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found!' });
         }
-    }).catch(err => {
-        return res.status(500).json({ success: false, error: err });
-    });
+        res.status(200).json({ success: true, message: 'The user is deleted!' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error deleting user', error });
+    }
 });
 
 router.get(`/get/count`, async (req, res) => {
-    const userCount = await User.countDocuments();
-    if (!userCount) {
-        res.status(500).json({ success: false });
+    try {
+        const userCount = await User.countDocuments();
+        res.status(200).send({ userCount });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error retrieving user count', error });
     }
-    res.send({
-        userCount: userCount
-    });
 });
+
 
 module.exports = router;
